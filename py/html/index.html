@@ -1,0 +1,345 @@
+<html>
+  <head>
+    <title>Robot position</title>
+<script type="text/javascript" src="http://code.jquery.com/jquery-2.1.0.min.js"></script>
+<script type="text/javascript" src="http://learningwebgl.com/lessons/lesson01/glMatrix-0.9.5.min.js"></script>
+    <script>
+// load position
+var gyro;
+var accel;
+
+function refreshData() {
+$.ajax({
+  url: "/position",
+  async: false,
+  context: document.body
+  }).done(function( data ) {
+    gyro = data.gyro;
+    accel = data.acc;
+  });
+ if ( console && console.log ) {
+      console.log( "Gyro: ", gyro );
+      console.log( "Accel: ", accel );
+    }
+}
+
+
+
+
+
+
+ var gl;
+  function initGL(canvas) {
+    try {
+      gl = canvas.getContext("experimental-webgl");
+      gl.viewportWidth = canvas.width;
+      gl.viewportHeight = canvas.height;
+    } catch(e) {
+    }
+    if (!gl) {
+      alert("Could not initialise WebGL, sorry :-( ");
+    }
+  }
+
+
+  var mvMatrix = mat4.create();
+  var pMatrix = mat4.create();
+
+  var mvMatrixStack = [];
+
+  function mvPushMatrix() {
+    var copy = mat4.create();
+    mat4.set(mvMatrix, copy);
+    mvMatrixStack.push(copy);
+  }
+
+  function mvPopMatrix() {
+    if (mvMatrixStack.length == 0) {
+      throw "Invalid popMatrix!";
+    }
+    mvMatrix = mvMatrixStack.pop();
+  }
+
+
+  var shaderProgram;
+  function initShaders() {
+    var fragmentShader = getShader(gl, "shader-fs");
+    var vertexShader = getShader(gl, "shader-vs");
+
+    shaderProgram = gl.createProgram();
+    gl.attachShader(shaderProgram, vertexShader);
+    gl.attachShader(shaderProgram, fragmentShader);
+    gl.linkProgram(shaderProgram);
+
+    if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+      alert("Could not initialise shaders");
+    }
+
+    gl.useProgram(shaderProgram);
+
+    shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+    gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+    shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor");
+    gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute);
+
+    shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+    shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+  }
+
+  function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+
+  function getShader(gl, id) {
+      var shaderScript = document.getElementById(id);
+      if (!shaderScript) {
+          return null;
+      }
+
+      var str = "";
+      var k = shaderScript.firstChild;
+      while (k) {
+          if (k.nodeType == 3)
+              str += k.textContent;
+          k = k.nextSibling;
+      }
+
+      var shader;
+      if (shaderScript.type == "x-shader/x-fragment") {
+          shader = gl.createShader(gl.FRAGMENT_SHADER);
+      } else if (shaderScript.type == "x-shader/x-vertex") {
+          shader = gl.createShader(gl.VERTEX_SHADER);
+      } else {
+          return null;
+      }
+
+      gl.shaderSource(shader, str);
+      gl.compileShader(shader);
+
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          alert(gl.getShaderInfoLog(shader));
+          return null;
+      }
+
+      return shader;
+  }
+
+function initColor(row, size) {
+
+    colorBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    colors = []
+    for (var i=0; i < size; i++) {
+      colors = colors.concat(row);
+    }
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+    colorBuffer.itemSize = 4;
+    colorBuffer.numItems = size;
+    return colorBuffer;
+}
+
+var redColor;
+var greenColor;
+var blueColor;
+
+function initColors() {
+    redColor = initColor([0.9,0.05,0.05,1],4);
+    greenColor = initColor([0.05,0.9,0.05,1.0],4);
+    blueColor = initColor([0.05,0.05,0.9,1.0],4);
+
+}
+
+var arrow_hear;
+var arrow_body;
+
+function initBuffers() {
+    arrow_head = gl.createBuffer();
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, arrow_head);
+
+    var vertices = [
+         0.05,  0.95,  0.0,
+         0.0,  1.0,   0.0,
+        -0.05,  0.95,  0.0
+    ];
+
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+    arrow_head.itemSize = 3;
+    arrow_head.numItems = 3;
+
+    arrow_body = gl.createBuffer();
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, arrow_body);
+
+    var vertices = [
+         0.01,  0.975,    0.0,
+        -0.01,  0.975,  0.0,
+         0.01,  0.0,  0.0,
+        -0.01,  0.0,    0.0
+    ];
+
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+    arrow_body.itemSize = 3;
+    arrow_body.numItems = 4;
+
+  }  
+
+  function setMatrixUniforms() {
+    gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+    gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+  }
+
+
+function drawHalfArrow(color) {
+// add 
+    gl.bindBuffer(gl.ARRAY_BUFFER, arrow_body);
+    gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, arrow_body.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, color);
+    gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, color.itemSize, gl.FLOAT, false, 0, 0);
+
+    setMatrixUniforms();
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, arrow_body.numItems);
+
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, arrow_head);
+    gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, arrow_head.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, color);
+    gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, color.itemSize, gl.FLOAT, false, 0, 0);
+
+    setMatrixUniforms();
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, arrow_head.numItems);
+}
+
+function drawArrow(color) {
+    mvPushMatrix();
+    drawHalfArrow(color);
+    mat4.rotate(mvMatrix, degToRad(90), [0, 1, 0]);
+    drawHalfArrow(color);
+    mvPopMatrix();
+}
+
+
+function drawAxis() {
+
+    mvPushMatrix();   
+
+    mat4.rotate(mvMatrix, degToRad(90), [1, 0, 0]);
+    // y
+    drawArrow(greenColor);
+
+    mat4.rotate(mvMatrix, degToRad(-90), [0, 0, 1]);
+
+    // x
+    drawArrow(redColor);
+
+    mat4.rotate(mvMatrix, degToRad(90), [0, 0, 1]);
+    mat4.rotate(mvMatrix, degToRad(90), [1, 0, 0]);
+
+    // Z
+    drawArrow(blueColor);
+
+    mvPopMatrix();
+
+}
+
+
+
+function drawScene() {
+
+    gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  
+    mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+
+    mat4.identity(mvMatrix);
+    mat4.translate(mvMatrix, [-1.5, 0.0, -7.0]);
+
+    mvPushMatrix();
+console.log("draw");
+    if (gyro) {
+    x = (gyro.x / 0xffff)*360;
+    console.log(x);
+    mat4.rotate(mvMatrix, degToRad(x), [1, 0, 0]);
+    y = (gyro.y / 0xffff)*360;
+    console.log(y);
+    mat4.rotate(mvMatrix, degToRad(y), [0, 1, 0]);
+    z = (gyro.z / 0xffff)*360;
+    console.log(z);
+    mat4.rotate(mvMatrix, degToRad(z), [0, 0, 1]);
+
+}
+
+    drawAxis();
+    mvPopMatrix();
+
+
+    mat4.translate(mvMatrix, [3.0, 0.0, 0.0]);
+
+    mvPushMatrix();
+    drawAxis();
+
+    mvPopMatrix();
+
+//    gl.bindBuffer(gl.ARRAY_BUFFER, squareVertexPositionBuffer);
+//    gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, squareVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+//    setMatrixUniforms();
+
+//    gl.drawArrays(gl.TRIANGLE_STRIP, 0, squareVertexPositionBuffer.numItems);
+
+}
+
+function webGLStart() {
+    var canvas = document.getElementById("gyro-canvas");
+    initGL(canvas);
+    initShaders();
+    initColors();
+    initBuffers();
+
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.enable(gl.DEPTH_TEST);
+
+    drawScene();
+  }
+
+
+    </script>
+   <script id="shader-fs" type="x-shader/x-fragment">
+  precision mediump float;
+
+  varying vec4 vColor;
+
+  void main(void) {
+    gl_FragColor = vColor;
+  }
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+ attribute vec3 aVertexPosition;
+  attribute vec4 aVertexColor;
+
+  uniform mat4 uMVMatrix;
+  uniform mat4 uPMatrix;
+
+  varying vec4 vColor;
+
+  void main(void) {
+    gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+    vColor = aVertexColor;
+  }
+</script>
+  </head>
+  <body onload="webGLStart()">
+    Gyro and acceleration
+    <canvas id="gyro-canvas" style="border: none;" width="500" height="500"></canvas>
+<input type="button" name="Start" value="Start"
+onclick="window.setInterval('refreshData(); drawScene();', 100)"/>
+  </body>
+</html>
