@@ -24,6 +24,8 @@ i2c = Adafruit_I2C(0x68)
 i2c.write8(0x6B,0)
 
 compass = Adafruit_I2C(0x1e)
+compass.write8(0x00,0x70)
+compass.write8(0x01,0xA0)
 compass.write8(0x02,0)
 
 def readS16Rev(i2c, reg):
@@ -32,6 +34,15 @@ def readS16Rev(i2c, reg):
     signed = unsigned
     if (signed>0x7fff):
         signed = signed - 0xffff
+    return signed
+    
+def readS12Rev(i2c, reg):
+    highByte = i2c.readS8(reg)
+    lowByte = i2c.readS8(reg+1)
+    unsigned = highByte * 256 + lowByte
+    signed = unsigned
+    if (signed>0x7ff):
+        signed = signed - 0xfff
     return signed
 
 class MyHandler(BaseHTTPRequestHandler):
@@ -87,9 +98,31 @@ class MyHandler(BaseHTTPRequestHandler):
             
         if (self.path == "/compass"):            
             
-            compass_x = readS16Rev(i2c, 0x03)
-            compass_y = readS16Rev(i2c, 0x07)
-            compass_z = readS16Rev(i2c, 0x05)
+            status = compass.readS8(0x09)
+            print 'compass status:',status
+            
+            compass_x = readS12Rev(compass, 0x03)
+            compass_y = readS12Rev(compass, 0x07)
+            compass_z = readS12Rev(compass, 0x05)
+            
+            print 'compass X:', compass_x
+            print 'compass Y:', compass_y
+            print 'compass Z:', compass_z
+            
+            self.send_response(200)
+            self.send_header('Content-type','text/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'compass': {'x':compass_x,'y':compass_y,'z':compass_z}}))
+            
+        if (self.path == "/compass/selftest"):            
+            
+        
+            status = compass.readS8(0x09)
+            print 'compass status:',status
+            
+            compass_x = readS16Rev(compass, 0x03)
+            compass_y = readS16Rev(compass, 0x07)
+            compass_z = readS16Rev(compass, 0x05)
             
             print 'compass X:', compass_x
             print 'compass Y:', compass_y
