@@ -4,9 +4,23 @@
 <script type="text/javascript" src="http://code.jquery.com/jquery-2.1.0.min.js"></script>
 <script type="text/javascript" src="http://learningwebgl.com/lessons/lesson01/glMatrix-0.9.5.min.js"></script>
     <script>
+    
+
+var regime; // 1 - current, 2 - replaying recorded 3 - recording
+
+var recorded = new Array();
+
 // load position
 var gyro;
 var accel;
+
+function startRecording() {
+    regime = 3;
+}
+
+function replayRecording() {
+    regime = 2;
+}
 
 function refreshData() {
 $.ajax({
@@ -262,18 +276,27 @@ function drawScene() {
     mat4.translate(mvMatrix, [-1.5, 0.0, -7.0]);
 
     mvPushMatrix();
-console.log("draw");
-    if (gyro) {
-    x = (gyro.x / 0xffff)*360;
+    console.log("draw");
+    if (accel) {
+    //x = (gyro.x / 0xffff)*360;
+    //console.log(x);
+    //mat4.rotate(mvMatrix, degToRad(x), [1, 0, 0]);
+    //y = (gyro.y / 0xffff)*360;
+    //console.log(y);
+    //mat4.rotate(mvMatrix, degToRad(y), [0, 1, 0]);
+    //z = (gyro.z / 0xffff)*360;
+    //console.log(z);
+    //mat4.rotate(mvMatrix, degToRad(z), [0, 0, 1]);
+    
+    x = Math.atan( accel.y/accel.z );
     console.log(x);
-    mat4.rotate(mvMatrix, degToRad(x), [1, 0, 0]);
-    y = (gyro.y / 0xffff)*360;
+    mat4.rotate(mvMatrix, x, [1, 0, 0]);
+    y = Math.atan( accel.z/accel.x );
     console.log(y);
-    mat4.rotate(mvMatrix, degToRad(y), [0, 1, 0]);
-    z = (gyro.z / 0xffff)*360;
+    mat4.rotate(mvMatrix, y, [0, 1, 0]);
+    z = Math.atan( accel.y/accel.x );
     console.log(z);
-    mat4.rotate(mvMatrix, degToRad(z), [0, 0, 1]);
-
+    mat4.rotate(mvMatrix, z, [0, 0, 1]);
 }
 
     drawAxis();
@@ -295,6 +318,27 @@ console.log("draw");
 //    gl.drawArrays(gl.TRIANGLE_STRIP, 0, squareVertexPositionBuffer.numItems);
 
 }
+
+function refreshUI() {
+    if (regime == 2) {
+        accel = recorded.shift();
+        console.log("replaying " + accel);
+        if (!accel) {
+            regime = 1;
+        }
+    }
+    if (regime == 1) {
+        refreshData();
+    }
+    if (regime == 3) {
+        refreshData();
+        recorded.push(accel);
+        console.log("recording " + recorded.length);
+    }
+    drawScene();
+}
+
+
 
 function webGLStart() {
     var canvas = document.getElementById("gyro-canvas");
@@ -340,6 +384,10 @@ function webGLStart() {
     Gyro and acceleration
     <canvas id="gyro-canvas" style="border: none;" width="500" height="500"></canvas>
 <input type="button" name="Start" value="Start"
-onclick="window.setInterval('refreshData(); drawScene();', 100)"/>
+onclick="window.setInterval('refreshUI();', 100)"/>
+<input type="button" name="Start recording" value="Start recording"
+onclick="startRecording();"/>
+<input type="button" name="Replay recording" value="Replay recording"
+onclick="replayRecording();"/>
   </body>
 </html>
